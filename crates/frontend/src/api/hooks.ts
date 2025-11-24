@@ -128,10 +128,13 @@ export function useAutoSave(options: {
     }
   });
 
-  onCleanup(() => {
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-    }
+  // Setup cleanup for debounce timer
+  onMount(() => {
+    onCleanup(() => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+    });
   });
 
   return {
@@ -156,10 +159,10 @@ export function useSaveShortcut(onSave: () => void) {
 
   onMount(() => {
     document.addEventListener("keydown", handleKeyDown);
-  });
 
-  onCleanup(() => {
-    document.removeEventListener("keydown", handleKeyDown);
+    onCleanup(() => {
+      document.removeEventListener("keydown", handleKeyDown);
+    });
   });
 }
 
@@ -170,18 +173,26 @@ export function useUnsavedChangesWarning(
   hasUnsavedChanges: Accessor<boolean>,
   onSave: () => Promise<void>,
 ) {
-  onMount(async () => {
-    const window = getCurrentWindow();
-    const unlisten = await window.onCloseRequested(async (event) => {
-      if (hasUnsavedChanges()) {
-        event.preventDefault();
-        await onSave();
-        await window.close();
-      }
-    });
+  let unlisten: (() => void) | undefined;
 
+  onMount(() => {
+    // Setup listener async
+    (async () => {
+      const window = getCurrentWindow();
+      unlisten = await window.onCloseRequested(async (event) => {
+        if (hasUnsavedChanges()) {
+          event.preventDefault();
+          await onSave();
+          await window.close();
+        }
+      });
+    })();
+
+    // Register cleanup synchronously
     onCleanup(() => {
-      unlisten();
+      if (unlisten) {
+        unlisten();
+      }
     });
   });
 }

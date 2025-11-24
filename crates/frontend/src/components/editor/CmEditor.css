@@ -1,0 +1,367 @@
+/**
+ * CodeMirror 6 Editor Styles
+ * Matches MdEditor styling with sans-serif font
+ */
+
+.cm-editor-wrapper {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  background-color: var(--color-background, #ffffff);
+  outline: none !important;
+}
+
+.cm-editor-wrapper *,
+.cm-editor-wrapper:focus,
+.cm-editor-wrapper:focus-visible,
+.cm-editor-wrapper:focus-within {
+  outline: none !important;
+}
+
+.cm-editor-container {
+  width: 100%;
+  height: 100%;
+  outline: none !important;
+}
+
+.cm-editor-container *,
+.cm-editor-container:focus,
+.cm-editor-container:focus-visible,
+.cm-editor-container:focus-within {
+  outline: none !important;
+}
+
+/* CodeMirror editor */
+.cm-editor {
+  height: 100%;
+  outline: none;
+}
+
+.cm-scroller {
+  overflow: auto;
+  font-family: var(--font-sans);
+}
+
+.cm-content {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--text-sm--line-height);
+  color: var(--color-text);
+  caret-color: var(--color-text);
+}
+
+/* Hide line numbers and gutters */
+.cm-gutters {
+  display: none;
+}
+
+/* Active line - minimal styling */
+.cm-activeLine {
+  background-color: transparent;
+}
+
+.cm-activeLineGutter {
+  background-color: transparent;
+}
+
+/* Selection */
+.cm-selectionBackground {
+  background-color: rgba(0, 122, 255, 0.2);
+}
+
+.cm-focused .cm-selectionBackground {
+  background-color: rgba(0, 122, 255, 0.3);
+}
+
+/* Cursor */
+.cm-cursor {
+  border-left-width: 2px;
+  border-left-color: var(--color-text, #000000);
+}
+
+/* Markdown rendering - style lines based on syntax tokens */
+
+/* Headings - target lines with heading marks */
+.cm-line:has([class*="heading"]) {
+  font-weight: bold;
+  overflow-wrap: anywhere;
+}
+
+/* Remove underline from headings in source mode */
+.cm-heading,
+.ͼ7 {
+  text-decoration: none !important;
+}
+
+/* Heading level 1 */
+.cm-line:has([class*="heading1"]) {
+  font-size: 2em;
+  line-height: 1.2;
+  margin-top: 0.67em;
+  margin-bottom: 0.67em;
+}
+
+/* Heading level 2 */
+.cm-line:has([class*="heading2"]) {
+  font-size: 1.5em;
+  line-height: 1.3;
+  margin-top: 0.83em;
+  margin-bottom: 0.83em;
+}
+
+/* Heading level 3 */
+.cm-line:has([class*="heading3"]) {
+  font-size: 1.17em;
+  line-height: 1.4;
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+/* Heading level 4 */
+.cm-line:has([class*="heading4"]) {
+  font-size: 1em;
+  font-weight: bold;
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+/* Lists */
+.cm-line:has([class*="list"]) {
+  overflow-wrap: anywhere;
+}
+
+/* Bold text - use attribute selector to catch syntax highlighting classes */
+[class*="strong"] {
+  font-weight: bold;
+}
+
+/* Italic text */
+[class*="emphasis"] {
+  font-style: italic;
+}
+
+/* Links */
+[class*="link"] {
+  color: #0066cc;
+  text-decoration: underline;
+}
+
+/* Inline code */
+[class*="inlineCode"],
+[class*="monospace"] {
+  font-family: monospace;
+  background-color: rgba(0, 0, 0, 0.05);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+}
+
+/* Code blocks */
+.cm-line:has([class*="codeMark"]) {
+  font-family: monospace;
+  background-color: rgba(0, 0, 0, 0.05);
+  padding: 0.2em 0.4em;
+}
+
+/* Horizontal rule */
+.cm-line:has([class*="hr"]) {
+  margin: 0.8rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Strikethrough */
+[class*="strikethrough"] {
+  text-decoration: line-through;
+}
+
+/* Focus ring */
+.cm-focused {
+  outline: none;
+}
+
+/* Hide markdown syntax marks in preview mode */
+.cm-hide-syntax {
+  display: none !important;
+}
+
+/* Style formatted text in preview mode */
+.cm-bold-text {
+  font-weight: bold;
+}
+
+.cm-italic-text {
+  font-style: italic;
+}
+
+.cm-strikethrough-text {
+  text-decoration: line-through;
+}
+
+/* Heading lines */
+.cm-heading-line {
+  font-weight: bold;
+}
+
+/* List marker (bullet/number replacement) */
+.cm-list-marker {
+  color: var(--color-text);
+  margin-right: 0;
+}
+
+/* Markdown widgets - rendered HTML */
+.cm-markdown-widget,
+.cm-markdown-block-widget,
+.cm-markdown-rendered {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--text-sm--line-height);
+  color: var(--color-text, #000000);
+}
+
+/* Span elements should be inline */
+.cm-markdown-widget span,
+.cm-markdown-block-widget span,
+.cm-markdown-rendered span {
+  display: inline;
+  margin: 0;
+  padding: 0;
+}
+
+/* List items rendered as spans with bullets */
+.cm-markdown-rendered.cm-list-item,
+.cm-list-item {
+  display: inline;
+}
+
+/* Widget headings - rendered as spans, just bold */
+.cm-markdown-rendered.cm-heading,
+.cm-heading {
+  font-weight: bold;
+  overflow-wrap: anywhere;
+}
+
+/* Widget lists */
+.cm-markdown-widget ul,
+.cm-markdown-block-widget ul,
+.cm-markdown-rendered ul {
+  list-style-type: disc;
+  padding-left: 1.7em;
+  margin: 0;
+}
+
+.cm-markdown-widget ol,
+.cm-markdown-block-widget ol,
+.cm-markdown-rendered ol {
+  list-style-type: decimal;
+  padding-left: 2.5em;
+  margin: 0;
+}
+
+.cm-markdown-widget li,
+.cm-markdown-block-widget li,
+.cm-markdown-rendered li {
+  overflow-wrap: anywhere;
+}
+
+/* Widget paragraphs */
+.cm-markdown-widget p,
+.cm-markdown-block-widget p,
+.cm-markdown-rendered p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Widget links */
+.cm-markdown-widget a,
+.cm-markdown-block-widget a,
+.cm-markdown-rendered a {
+  color: #0066cc;
+  text-decoration: underline;
+}
+
+/* Widget code */
+.cm-markdown-widget code,
+.cm-markdown-block-widget code,
+.cm-markdown-rendered code {
+  font-family: monospace;
+  background-color: rgba(0, 0, 0, 0.05);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+}
+
+/* Widget bold/italic */
+.cm-markdown-widget strong,
+.cm-markdown-block-widget strong,
+.cm-markdown-rendered strong {
+  font-weight: bold;
+}
+
+.cm-markdown-widget em,
+.cm-markdown-block-widget em,
+.cm-markdown-rendered em {
+  font-style: italic;
+}
+
+/* Widget hr */
+.cm-markdown-widget hr,
+.cm-markdown-block-widget hr,
+.cm-markdown-rendered hr {
+  margin: 0.8rem 0;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Widget images */
+.cm-markdown-widget img,
+.cm-markdown-block-widget img,
+.cm-markdown-rendered img {
+  max-height: 300px;
+  width: auto;
+}
+
+.cm-markdown-widget p:has(> img:not(:only-child)),
+.cm-markdown-block-widget p:has(> img:not(:only-child)),
+.cm-markdown-rendered p:has(> img:not(:only-child)) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.cm-markdown-widget p:has(> img:not(:only-child)) img,
+.cm-markdown-block-widget p:has(> img:not(:only-child)) img,
+.cm-markdown-rendered p:has(> img:not(:only-child)) img {
+  flex: 0 1 auto;
+}
+
+/* Widget blockquote */
+.cm-markdown-widget blockquote,
+.cm-markdown-block-widget blockquote,
+.cm-markdown-rendered blockquote {
+  border-left: 3px solid var(--color-border);
+  padding-left: 1em;
+  margin-left: 0;
+  font-style: italic;
+}
+
+/* Widget strikethrough */
+.cm-markdown-widget del,
+.cm-markdown-block-widget del,
+.cm-markdown-rendered del {
+  text-decoration: line-through;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .cm-editor-wrapper {
+    background-color: var(--color-background, #1e1e1e);
+  }
+
+  .cm-content {
+    color: var(--color-text, #ffffff);
+    caret-color: var(--color-text, #ffffff);
+  }
+
+  .cm-cursor {
+    border-left-color: var(--color-text, #ffffff);
+  }
+}

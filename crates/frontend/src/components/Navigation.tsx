@@ -24,11 +24,18 @@ function Breadcrumb(props: { item: NoteMetadata; isActive: boolean }) {
   const [editTitle, setEditTitle] = createSignal("");
 
   // Listen for frecency updates
-  onMount(async () => {
-    const unlisten = await listen("notes:frecency", () => {
-      setRefreshKey((k) => k + 1);
+  onMount(() => {
+    let unlisten: (() => void) | undefined;
+
+    (async () => {
+      unlisten = await listen("notes:frecency", () => {
+        setRefreshKey((k) => k + 1);
+      });
+    })();
+
+    onCleanup(() => {
+      unlisten?.();
     });
-    onCleanup(unlisten);
   });
 
   createEffect(() => {
@@ -137,11 +144,18 @@ function RootCrumb() {
   const [refreshKey, setRefreshKey] = createSignal(0);
 
   // Listen for frecency updates
-  onMount(async () => {
-    const unlisten = await listen("notes:frecency", () => {
-      setRefreshKey((k) => k + 1);
+  onMount(() => {
+    let unlisten: (() => void) | undefined;
+
+    (async () => {
+      unlisten = await listen("notes:frecency", () => {
+        setRefreshKey((k) => k + 1);
+      });
+    })();
+
+    onCleanup(() => {
+      unlisten?.();
     });
-    onCleanup(unlisten);
   });
 
   createEffect(() => {

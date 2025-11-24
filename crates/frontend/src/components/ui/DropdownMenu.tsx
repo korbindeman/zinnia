@@ -49,16 +49,23 @@ export function DropdownMenu(props: DropdownMenuProps) {
   } | null>(null);
 
   // Listen for frecency updates and clear cache
-  onMount(async () => {
-    const unlisten = await listen("notes:frecency", () => {
-      // Clear cache to force refetch with new order
-      setChildrenCache(new Map());
-      // Trigger refresh if callback provided
-      if (props.onRefresh) {
-        props.onRefresh();
-      }
+  onMount(() => {
+    let unlisten: (() => void) | undefined;
+
+    (async () => {
+      unlisten = await listen("notes:frecency", () => {
+        // Clear cache to force refetch with new order
+        setChildrenCache(new Map());
+        // Trigger refresh if callback provided
+        if (props.onRefresh) {
+          props.onRefresh();
+        }
+      });
+    })();
+
+    onCleanup(() => {
+      unlisten?.();
     });
-    onCleanup(unlisten);
   });
 
   // Track refs for positioning

@@ -33,86 +33,91 @@ function AppContent() {
     }
   };
 
-  onMount(async () => {
+  onMount(() => {
     // Register global keyboard listener
     document.addEventListener("keydown", handleKeyDown);
+
+    let updateCheckInterval: number | undefined;
+
+    // Register cleanup synchronously
     onCleanup(() => {
       document.removeEventListener("keydown", handleKeyDown);
+      if (updateCheckInterval) {
+        clearInterval(updateCheckInterval);
+      }
     });
 
-    const settings = await loadSettings();
-    console.log("Loaded settings:", settings);
+    // Do async work
+    (async () => {
+      const settings = await loadSettings();
 
-    // Apply font size setting
-    document.documentElement.style.setProperty(
-      "--text-base",
-      `${settings.fontSize}px`,
-    );
+      // Apply font size setting
+      document.documentElement.style.setProperty(
+        "--text-base",
+        `${settings.fontSize}px`,
+      );
 
-    // Open last opened note if setting is enabled and note exists
-    if (settings.openLastNote) {
-      const lastOpenedNote = await getAppState("lastOpenedNote");
-      if (lastOpenedNote) {
-        notes.setCurrentPath(lastOpenedNote);
+      // Open last opened note if setting is enabled and note exists
+      if (settings.openLastNote) {
+        const lastOpenedNote = await getAppState("lastOpenedNote");
+        if (lastOpenedNote) {
+          notes.setCurrentPath(lastOpenedNote);
+        }
       }
-    }
 
-    const currentVersion = await getVersion();
-    const lastVersion = await getAppState("lastAppVersion");
+      const currentVersion = await getVersion();
+      const lastVersion = await getAppState("lastAppVersion");
 
-    // Check if app was just updated
-    if (lastVersion && lastVersion !== currentVersion) {
-      const releaseUrl = `https://github.com/korbindeman/zinnia/releases/tag/v${currentVersion}`;
+      // Check if app was just updated
+      if (lastVersion && lastVersion !== currentVersion) {
+        const releaseUrl = `https://github.com/korbindeman/zinnia/releases/tag/v${currentVersion}`;
 
-      const openReleaseNotes = async () => {
-        const opener = await import("@tauri-apps/plugin-opener");
-        await opener.openUrl(releaseUrl);
-      };
+        const openReleaseNotes = async () => {
+          const opener = await import("@tauri-apps/plugin-opener");
+          await opener.openUrl(releaseUrl);
+        };
 
-      toast.success(`Updated to v${currentVersion}`, {
-        duration: "persistent",
-        actionLabel: "Release Notes",
-        onAction: openReleaseNotes,
-      });
-    }
-
-    // Store current version for next launch
-    await setAppState("lastAppVersion", currentVersion);
-
-    // Function to check for updates and show toast if available
-    const performUpdateCheck = async () => {
-      if (!settings.autoCheckUpdates) return;
-
-      const update = await checkForUpdates();
-      if (update) {
-        toast.update(`Update available: v${update.version}`, {
+        toast.success(`Updated to v${currentVersion}`, {
           duration: "persistent",
-          actionLabel: "Update & Restart",
-          onAction: async () => {
-            const success = await downloadAndInstallUpdate(update.update);
-            if (success) {
-              await restartApp();
-            } else {
-              toast.error("Failed to download update. Please try again.");
-            }
-          },
+          actionLabel: "Release Notes",
+          onAction: openReleaseNotes,
         });
       }
-    };
 
-    // Check for updates on app startup
-    await performUpdateCheck();
+      // Store current version for next launch
+      await setAppState("lastAppVersion", currentVersion);
 
-    // Check for updates on interval
-    const HOURS = 2;
-    const updateCheckInterval = setInterval(
-      performUpdateCheck,
-      HOURS * 60 * 60 * 1000,
-    );
+      // Function to check for updates and show toast if available
+      const performUpdateCheck = async () => {
+        if (!settings.autoCheckUpdates) return;
 
-    onCleanup(() => {
-      clearInterval(updateCheckInterval);
-    });
+        const update = await checkForUpdates();
+        if (update) {
+          toast.update(`Update available: v${update.version}`, {
+            duration: "persistent",
+            actionLabel: "Update & Restart",
+            onAction: async () => {
+              const success = await downloadAndInstallUpdate(update.update);
+              if (success) {
+                await restartApp();
+              } else {
+                toast.error("Failed to download update. Please try again.");
+              }
+            },
+          });
+        }
+      };
+
+      // Check for updates on app startup
+      await performUpdateCheck();
+
+      // Check for updates on interval
+      const HOURS = 2;
+      updateCheckInterval = setInterval(
+        performUpdateCheck,
+        HOURS * 60 * 60 * 1000,
+      ) as unknown as number;
+    })();
   });
 
   const handleNoteSelect = (note: NoteMetadata) => {

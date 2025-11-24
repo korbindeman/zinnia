@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, State};
-use zinnia_core::{Note, NoteMetadata, NotesApi, RankingMode, WatcherEvent, setup_watcher};
+use tauri_plugin_store::StoreExt;
+use zinnia_core::{
+    Note, NoteMetadata, NotesApi, RankingMode, WatcherEvent, cleanup_br_tags, setup_watcher,
+};
 
 // Application state holding the NotesApi instance
 pub struct AppState {
@@ -191,6 +194,7 @@ fn trash_note(path: String, state: State<AppState>) -> Result<(), String> {
 pub fn run() {
     let mut api =
         NotesApi::with_default_path(cfg!(debug_assertions)).expect("Failed to initialize NotesApi");
+
     api.startup_sync().expect("Failed to sync notes database");
 
     let notes_api = Arc::new(Mutex::new(api));
@@ -227,6 +231,34 @@ pub fn run() {
         .setup(move |app| {
             let app_handle = app.handle().clone();
             let app_handle_frecency = app.handle().clone();
+
+            // Check if br tags migration has been completed
+            let store = app
+                .store("app-state.json")
+                .expect("Failed to load app-state store");
+            let migration_completed = store
+                .get("brTagsMigrationCompleted")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            if !migration_completed {
+                eprintln!("Running br tag cleanup migration...");
+                let notes_root = {
+                    let api = notes_api.lock().unwrap();
+                    api.notes_root().to_path_buf()
+                };
+
+                if let Err(e) = cleanup_br_tags(&notes_root) {
+                    eprintln!("Warning: Failed to run br tag cleanup migration: {:?}", e);
+                } else {
+                    // Mark migration as completed
+                    store.set("brTagsMigrationCompleted", serde_json::json!(true));
+                    if let Err(e) = store.save() {
+                        eprintln!("Warning: Failed to save store: {:?}", e);
+                    }
+                    eprintln!("br tag cleanup migration completed successfully");
+                }
+            }
 
             // Set up frecency callback
             {

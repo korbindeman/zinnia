@@ -125,6 +125,12 @@ impl NoteFilesystem {
 
             if metadata.is_dir() {
                 let name = entry.file_name().to_string_lossy().to_string();
+
+                // Skip special directories
+                if name == "_backups" {
+                    continue;
+                }
+
                 let new_prefix = if prefix.is_empty() {
                     name.clone()
                 } else {

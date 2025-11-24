@@ -1,6 +1,6 @@
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { useNotes } from "../../api";
-import MdLoader from "./MdEditor";
+import CmLoader from "./CmLoader";
 
 export default function EditorManager() {
   const notes = useNotes();
@@ -23,7 +23,7 @@ export default function EditorManager() {
         <For each={activeEditors()}>
           {(item, _index) => (
             <Show when={item === notes.currentPath()}>
-              <MdLoader path={item} />
+              <CmLoader path={item} />
             </Show>
           )}
         </For>

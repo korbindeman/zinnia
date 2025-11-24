@@ -5,6 +5,7 @@ import {
   createSignal,
   createResource,
   createMemo,
+  onMount,
   onCleanup,
   type ParentProps,
   type Resource,
@@ -188,53 +189,58 @@ export function NotesProvider(props: ParentProps) {
   };
 
   // Listen for filesystem watcher events from Tauri backend
-  const setupWatcherListeners = async () => {
-    // Listen for note changes (create, update, delete)
-    // The backend now uses content hash comparison, so this event only fires
-    // when content actually changes (not on our own saves with identical content)
-    const unlistenChanged = await listen("notes:changed", () => {
-      console.log(
-        "File watcher detected external changes, reloading current note...",
-      );
-      // Force reload by toggling the path
-      const path = currentPath();
-      if (path) {
-        setCurrentPath("");
-        // Use setTimeout to ensure the effect runs twice
-        setTimeout(() => setCurrentPath(path), 0);
-      }
-    });
+  onMount(() => {
+    let unlistenChanged: (() => void) | undefined;
+    let unlistenRenamed: (() => void) | undefined;
+    let unlistenFrecency: (() => void) | undefined;
 
-    // Listen for note renames/moves
-    const unlistenRenamed = await listen("notes:renamed", () => {
-      console.log(
-        "File watcher detected external rename/move, reloading current note...",
-      );
-      // Force reload by toggling the path
-      const path = currentPath();
-      if (path) {
-        setCurrentPath("");
-        setTimeout(() => setCurrentPath(path), 0);
-      }
-    });
+    // Setup async listeners
+    (async () => {
+      // Listen for note changes (create, update, delete)
+      // The backend now uses content hash comparison, so this event only fires
+      // when content actually changes (not on our own saves with identical content)
+      unlistenChanged = await listen("notes:changed", () => {
+        console.log(
+          "File watcher detected external changes, reloading current note...",
+        );
+        // Force reload by toggling the path
+        const path = currentPath();
+        if (path) {
+          setCurrentPath("");
+          // Use setTimeout to ensure the effect runs twice
+          setTimeout(() => setCurrentPath(path), 0);
+        }
+      });
 
-    // Listen for frecency updates
-    const unlistenFrecency = await listen("notes:frecency", () => {
-      // Refresh children and root notes to get updated order
-      refetchChildren();
-      refetchRootNotes();
-    });
+      // Listen for note renames/moves
+      unlistenRenamed = await listen("notes:renamed", () => {
+        console.log(
+          "File watcher detected external rename/move, reloading current note...",
+        );
+        // Force reload by toggling the path
+        const path = currentPath();
+        if (path) {
+          setCurrentPath("");
+          setTimeout(() => setCurrentPath(path), 0);
+        }
+      });
+
+      // Listen for frecency updates
+      unlistenFrecency = await listen("notes:frecency", () => {
+        // Refresh children and root notes to get updated order
+        refetchChildren();
+        refetchRootNotes();
+      });
+    })();
 
     // Cleanup listeners when component unmounts
+    // Register cleanup synchronously before async work completes
     onCleanup(() => {
-      unlistenChanged();
-      unlistenRenamed();
-      unlistenFrecency();
+      unlistenChanged?.();
+      unlistenRenamed?.();
+      unlistenFrecency?.();
     });
-  };
-
-  // Setup listeners on mount
-  setupWatcherListeners();
+  });
 
   const value: NotesContextValue = {
     currentNote,

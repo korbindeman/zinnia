@@ -5,6 +5,7 @@ import { Store } from "@tauri-apps/plugin-store";
 export interface AppState {
   lastOpenedNote?: string;
   lastAppVersion?: string;
+  brTagsMigrationCompleted?: boolean;
 }
 
 let store: Store | null = null;
