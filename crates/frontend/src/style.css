@@ -25,17 +25,17 @@
   /* Dark theme */
   @media (prefers-color-scheme: dark) {
     :root {
-      --color-background: #1a1a1a;
-      --color-paper: #242424;
-      --color-text: #d0d0d0;
-      --color-text-muted: #a8a8a8;
-      --color-border: #393939;
-      --color-selection: #4a6b8a;
-      --color-button-bg: #2d2d2d;
-      --color-button-hover: #353535;
-      --color-context-menu-bg: #1f1f1f;
-      --color-context-menu-border: #2a2a2a;
-      --color-red: #ef4444;
+      --color-background: #212221;
+      --color-paper: #2a2a29;
+      --color-text: #d4d4d4;
+      --color-text-muted: #9ca3af;
+      --color-border: #404040;
+      --color-selection: #b8bb26;
+      --color-button-bg: #333332;
+      --color-button-hover: #3d3d3c;
+      --color-context-menu-bg: #252524;
+      --color-context-menu-border: #3d3d3c;
+      --color-red: #fc5d49;
     }
   }
 
