@@ -347,6 +347,9 @@ impl NotesApi {
         // Write to filesystem
         self.fs.write_note(path, content)?;
 
+        // Clean up unused attachments
+        self.fs.cleanup_unused_attachments(path, content)?;
+
         // Update database
         self.sync_note(path)?;
 
@@ -420,21 +423,12 @@ impl NotesApi {
             return Err(Error::AlreadyExists(new_path.to_string()));
         }
 
-        // Read content from old path
-        let content = self.fs.read_note(old_path)?;
-
-        // Get all descendants with their content
-        let descendants: Vec<(String, String)> = self
+        // Get all descendants before moving
+        let descendants: Vec<String> = self
             .db
             .prepare("SELECT path FROM notes WHERE path LIKE ?1")?
             .query_map(params![format!("{}/%", old_path)], |row| row.get(0))?
-            .collect::<std::result::Result<Vec<String>, _>>()?
-            .into_iter()
-            .map(|path| {
-                let content = self.fs.read_note(&path).unwrap_or_default();
-                (path, content)
-            })
-            .collect();
+            .collect::<std::result::Result<Vec<String>, _>>()?;
 
         // For case-only renames, use a temporary intermediate path to avoid filesystem conflicts
         if is_case_only_rename {
@@ -448,49 +442,14 @@ impl NotesApi {
                     .as_nanos()
             );
 
-            // Move to temporary location first
-            self.fs.write_note(&temp_path, &content)?;
-
-            // Move descendants to temp location
-            let temp_descendants: Vec<(String, String, String)> = descendants
-                .iter()
-                .map(|(desc_old, desc_content)| {
-                    let desc_temp = desc_old.replacen(old_path, &temp_path, 1);
-                    (desc_old.clone(), desc_temp, desc_content.clone())
-                })
-                .collect();
-
-            for (_, desc_temp, desc_content) in &temp_descendants {
-                self.fs.write_note(desc_temp, desc_content)?;
-            }
-
-            // Delete old path
-            self.fs.delete_note(old_path)?;
+            // Move to temporary location first (this moves the entire directory including _attachments)
+            self.fs.rename_note(old_path, &temp_path)?;
 
             // Move from temp to new path
-            self.fs.write_note(new_path, &content)?;
-
-            for (desc_old, _desc_temp, desc_content) in &temp_descendants {
-                let desc_new = desc_old.replacen(old_path, new_path, 1);
-                self.fs.write_note(&desc_new, desc_content)?;
-            }
-
-            // Clean up temp location
-            self.fs.delete_note(&temp_path).ok(); // Ignore errors on cleanup
+            self.fs.rename_note(&temp_path, new_path)?;
         } else {
-            // Regular rename: write to new location then delete old
-
-            // Write to new path
-            self.fs.write_note(new_path, &content)?;
-
-            // Move descendants
-            for (desc_old, desc_content) in &descendants {
-                let desc_new = desc_old.replacen(old_path, new_path, 1);
-                self.fs.write_note(&desc_new, desc_content)?;
-            }
-
-            // Delete old path (after all new files are written)
-            self.fs.delete_note(old_path)?;
+            // Regular rename: move the entire directory (includes _index.md, _attachments, and child notes)
+            self.fs.rename_note(old_path, new_path)?;
         }
 
         // Update database: update all paths
@@ -499,8 +458,8 @@ impl NotesApi {
             params![old_path, new_path, get_parent_path(new_path)],
         )?;
 
-        // Update descendant paths
-        for (desc_old, _) in &descendants {
+        // Update descendant paths in database
+        for desc_old in &descendants {
             let desc_new = desc_old.replacen(old_path, new_path, 1);
             self.db.execute(
                 "UPDATE notes SET path = ?2, parent_path = ?3 WHERE path = ?1",

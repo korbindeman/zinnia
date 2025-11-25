@@ -4,12 +4,279 @@ import { createSignal, createEffect, onCleanup, onMount, Show } from "solid-js";
 import { history } from "@milkdown/kit/plugin/history";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { gfm } from "@milkdown/kit/preset/gfm";
+import { $prose, $nodeAttr } from "@milkdown/kit/utils";
+import { Plugin, PluginKey } from "@milkdown/kit/prose/state";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import "prosemirror-view/style/prosemirror.css";
 import { useNoteContent, useAutoSave } from "../../api";
 import { NoteContent } from "../../api/hooks";
+import { commands } from "../../api/commands";
 import "./MdEditor.css";
 
 const AUTOSAVE_DELAY = 400;
+
+/**
+ * Create a Milkdown plugin that resolves image paths for display
+ */
+const createImagePathResolverPlugin = (notePath: string) => {
+  const pluginKey = new PluginKey("imagePathResolver");
+
+  return $prose(() => {
+    return new Plugin({
+      key: pluginKey,
+      props: {
+        decorations(state) {
+          const decorations: any[] = [];
+
+          state.doc.descendants((node, pos) => {
+            if (node.type.name === "image") {
+              const src = node.attrs.src;
+
+              // Only process local paths (relative paths starting with ./ or _attachments/)
+              if (
+                src &&
+                !src.startsWith("http") &&
+                !src.startsWith("asset://")
+              ) {
+                // Resolve the path asynchronously and update the DOM
+                (async () => {
+                  try {
+                    const fullPath = await commands.resolveImagePath(
+                      notePath,
+                      src,
+                    );
+                    const assetUrl = convertFileSrc(fullPath, "asset");
+
+                    // Find the image element in the DOM and update its src
+                    const images = document.querySelectorAll(
+                      `img[src="${src}"]`,
+                    );
+                    images.forEach((img) => {
+                      if (img instanceof HTMLImageElement) {
+                        img.src = assetUrl;
+                      }
+                    });
+                  } catch (error) {
+                    console.error(
+                      `Failed to resolve image path: ${src}`,
+                      error,
+                    );
+                  }
+                })();
+              }
+            }
+          });
+
+          return null;
+        },
+      },
+    });
+  });
+};
+
+/**
+ * Create a Milkdown plugin that handles pasting image URLs
+ */
+const createImagePastePlugin = (notePath: string) => {
+  const pluginKey = new PluginKey("imagePaste");
+
+  return $prose(() => {
+    return new Plugin({
+      key: pluginKey,
+      props: {
+        handlePaste: (view, event) => {
+          const text = event.clipboardData?.getData("text/plain");
+          const html = event.clipboardData?.getData("text/html");
+
+          if (!text && !html) return false;
+
+          // Extract image URLs from HTML img tags (e.g., from Pinterest)
+          if (html) {
+            const htmlImageRegex =
+              /<img[^>]+src="([^"]+)"[^>]*alt="([^"]*)"[^>]*>/gi;
+            const htmlMatches = Array.from(html.matchAll(htmlImageRegex));
+
+            if (htmlMatches.length > 0) {
+              // Check if any of the images are remote URLs
+              const remoteImages = htmlMatches.filter((match) => {
+                const url = match[1];
+                return url.startsWith("http://") || url.startsWith("https://");
+              });
+
+              if (remoteImages.length > 0) {
+                event.preventDefault();
+                console.log(
+                  "Detected HTML images with remote URLs:",
+                  remoteImages.length,
+                );
+
+                // Process all remote images
+                const imagePromises = remoteImages.map(async (match) => {
+                  const url = match[1];
+                  const alt = match[2] || "image";
+
+                  console.log("Downloading image:", url);
+                  try {
+                    const localPath = await commands.downloadImage(
+                      notePath,
+                      url,
+                    );
+                    console.log("Downloaded to:", localPath);
+                    return { alt, localPath };
+                  } catch (error) {
+                    console.error("Failed to download image:", error);
+                    return null;
+                  }
+                });
+
+                // Wait for all downloads and insert images
+                Promise.all(imagePromises).then((results) => {
+                  const { tr } = view.state;
+                  const { schema } = view.state;
+                  let { from } = view.state.selection;
+
+                  results.forEach((result) => {
+                    if (result) {
+                      const imageNode = schema.nodes.image?.create({
+                        src: result.localPath,
+                        alt: result.alt,
+                      });
+
+                      if (imageNode) {
+                        tr.replaceWith(from, from, imageNode);
+                        from = from + 1; // Move position forward for next image
+                      }
+                    }
+                  });
+
+                  view.dispatch(tr);
+                });
+
+                return true;
+              }
+            }
+          }
+
+          // Extract image URLs from markdown image syntax
+          // Matches: ![alt](url) or ![alt](url "title")
+          if (text) {
+            const markdownImageRegex =
+              /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+            const matches = Array.from(text.matchAll(markdownImageRegex));
+
+            if (matches.length > 0) {
+              // Check if any of the images are remote URLs
+              const remoteImages = matches.filter((match) => {
+                const url = match[2];
+                return url.startsWith("http://") || url.startsWith("https://");
+              });
+
+              if (remoteImages.length > 0) {
+                event.preventDefault();
+                console.log(
+                  "Detected markdown images with remote URLs:",
+                  remoteImages.length,
+                );
+
+                // Process all remote images
+                const imagePromises = remoteImages.map(async (match) => {
+                  const alt = match[1] || "image";
+                  const url = match[2];
+
+                  console.log("Downloading image:", url);
+                  try {
+                    const localPath = await commands.downloadImage(
+                      notePath,
+                      url,
+                    );
+                    console.log("Downloaded to:", localPath);
+                    return { alt, localPath };
+                  } catch (error) {
+                    console.error("Failed to download image:", error);
+                    return null;
+                  }
+                });
+
+                // Wait for all downloads and insert images
+                Promise.all(imagePromises).then((results) => {
+                  const { tr } = view.state;
+                  const { schema } = view.state;
+                  let { from } = view.state.selection;
+
+                  results.forEach((result, index) => {
+                    if (result) {
+                      const imageNode = schema.nodes.image?.create({
+                        src: result.localPath,
+                        alt: result.alt,
+                      });
+
+                      if (imageNode) {
+                        tr.replaceWith(from, from, imageNode);
+                        from = from + 1; // Move position forward for next image
+                      }
+                    }
+                  });
+
+                  view.dispatch(tr);
+                });
+
+                return true;
+              }
+            }
+          }
+
+          // Check if the pasted text is a plain image URL
+          if (text) {
+            const imageUrlRegex =
+              /^https?:\/\/.+\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i;
+            const isImageUrl = imageUrlRegex.test(text.trim());
+
+            if (isImageUrl) {
+              event.preventDefault();
+
+              console.log("Detected image URL paste:", text.trim());
+              console.log("Note path:", notePath);
+
+              // Download the image asynchronously
+              commands
+                .downloadImage(notePath, text.trim())
+                .then((localPath) => {
+                  console.log("Image downloaded successfully to:", localPath);
+
+                  // Get the image node type from the schema
+                  const { schema } = view.state;
+                  const imageNode = schema.nodes.image?.create({
+                    src: localPath,
+                    alt: "image",
+                  });
+
+                  if (imageNode) {
+                    // Insert as a proper image node
+                    const { tr } = view.state;
+                    const { from } = view.state.selection;
+                    tr.replaceWith(from, from, imageNode);
+                    view.dispatch(tr);
+                  }
+                })
+                .catch((error) => {
+                  console.error("Failed to download image:", error);
+                  // Fall back to inserting the URL as-is
+                  const { tr } = view.state;
+                  const { from } = view.state.selection;
+                  tr.insertText(text, from);
+                  view.dispatch(tr);
+                });
+
+              return true;
+            }
+          }
+
+          return false;
+        },
+      },
+    });
+  });
+};
 
 function MdEditor({ path, content }: { path: string; content: NoteContent }) {
   const [pathSignal, _] = createSignal(path);
@@ -43,6 +310,8 @@ function MdEditor({ path, content }: { path: string; content: NoteContent }) {
       .use(gfm)
       .use(history)
       .use(listener)
+      .use(createImagePathResolverPlugin(path))
+      .use(createImagePastePlugin(path))
       .create();
   });
 
