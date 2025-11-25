@@ -140,6 +140,7 @@ function AppContent() {
         onSelect={handleNoteSelect}
         onClose={() => setShowNoteFinder(false)}
         placeholder="Search notes..."
+        rankBy="frecency"
       />
       <Settings open={showSettings()} onClose={() => setShowSettings(false)} />
     </div>

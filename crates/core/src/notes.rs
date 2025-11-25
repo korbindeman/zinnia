@@ -55,6 +55,102 @@ pub enum RankingMode {
     Frecency,
 }
 
+/// Fuzzy match scoring function that matches characters in sequence,
+/// treating '/' as either a matchable character or a gap.
+///
+/// Returns Some(score) if the query matches, None otherwise.
+/// Lower scores indicate better matches.
+///
+/// Scoring strategy:
+/// - Exact prefix match in note name: best score (0-99)
+/// - Match in note name: good score (100-199)
+/// - Match spanning path separator: decent score (200-299)
+/// - Match in parent path: lower priority (300+)
+///
+/// Examples:
+/// - "jou" matches "journal" with score ~0 (prefix match in name)
+/// - "jou" matches "daily/journal" with score ~300 (prefix match in parent)
+/// - "journhel" matches "journal/hello" with score ~200 (spans separator)
+/// - "journ/" matches "journal/daily" with score ~0 (exact separator match)
+fn fuzzy_match_score(path: &str, query: &str) -> Option<i32> {
+    let path_lower = path.to_lowercase();
+    let query_chars: Vec<char> = query.chars().collect();
+    let path_chars: Vec<char> = path_lower.chars().collect();
+
+    if query_chars.is_empty() {
+        return Some(0);
+    }
+
+    // Try to match all query characters in sequence
+    let mut query_idx = 0;
+    let mut path_idx = 0;
+    let mut first_match_idx = None;
+    let mut match_indices = Vec::new();
+    let mut gaps = 0;
+
+    while query_idx < query_chars.len() && path_idx < path_chars.len() {
+        let query_char = query_chars[query_idx];
+        let path_char = path_chars[path_idx];
+
+        if query_char == path_char {
+            // Direct character match
+            if first_match_idx.is_none() {
+                first_match_idx = Some(path_idx);
+            }
+            match_indices.push(path_idx);
+            query_idx += 1;
+            path_idx += 1;
+        } else if query_char == '/' && path_char != '/' {
+            // Query has '/' but path doesn't - skip the path char
+            path_idx += 1;
+            gaps += 1;
+        } else if query_char != '/' && path_char == '/' {
+            // Path has '/' but query doesn't - skip the separator
+            path_idx += 1;
+            gaps += 1;
+        } else {
+            // No match, advance path
+            path_idx += 1;
+            gaps += 1;
+        }
+    }
+
+    // If we didn't match all query characters, no match
+    if query_idx < query_chars.len() {
+        return None;
+    }
+
+    let first_match = first_match_idx?;
+
+    // Calculate score based on match position and quality
+    // Check if match is in the note name (after last /)
+    let last_slash = path_lower.rfind('/').map(|i| i + 1).unwrap_or(0);
+    let in_note_name = first_match >= last_slash;
+
+    let score = if in_note_name {
+        // Match in note name
+        if first_match == last_slash {
+            // Exact prefix match in note name - best case
+            0
+        } else {
+            // Match somewhere in note name
+            100 + (first_match - last_slash) as i32
+        }
+    } else {
+        // Match starts in parent path
+        if last_slash > 0 && match_indices.iter().any(|&i| i >= last_slash) {
+            // Match spans across path separator
+            200 + first_match as i32
+        } else {
+            // Match entirely in parent path - lower priority
+            300 + first_match as i32
+        }
+    };
+
+    // Add penalty for gaps/skipped characters
+    Some(score + gaps)
+}
+
 pub struct NotesApi {
     fs: NoteFilesystem,
     db: Connection,
@@ -715,12 +811,13 @@ impl NotesApi {
 
     /// Fuzzy search for notes by path/title (for quick finder/picker UIs).
     ///
-    /// Performs case-insensitive substring matching on note paths.
-    /// Returns non-archived notes sorted by:
-    /// 1. Path prefix matches first (e.g., "hel" matches "hello/world" before "some/hello")
-    /// 2. Ranking score (frecency or visits, depending on `ranking_mode`)
-    /// 3. Alphabetical order as final tiebreaker
+    /// Performs flexible fuzzy matching on note paths with intelligent scoring:
+    /// - Matches characters in sequence, allowing gaps (e.g., "journhel" matches "journal/hello")
+    /// - Path separators (/) can match query characters or be skipped
+    /// - Prioritizes matches in note name over parent path
+    /// - Uses ranking score (frecency/visits) as tiebreaker for similar match quality
     ///
+    /// Returns non-archived notes sorted by match quality, then by ranking score.
     /// Designed for interactive note pickers where users type partial titles.
     pub fn fuzzy_search(
         &self,
@@ -763,41 +860,56 @@ impl NotesApi {
             return Ok(results);
         }
 
-        // Use LIKE for substring matching, with % wildcards
-        let pattern = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
-
-        let limit_clause = limit.map(|l| format!("LIMIT {}", l)).unwrap_or_default();
+        // Fetch all non-archived notes with their ranking scores
         let sql = format!(
-            "SELECT id, path, mtime, archived,
-                    CASE
-                        WHEN LOWER(path) LIKE LOWER(?1) THEN 1
-                        WHEN LOWER(path) LIKE LOWER(?2) THEN 2
-                        ELSE 3
-                    END as match_priority
+            "SELECT id, path, mtime, archived, {} as ranking_score
              FROM notes
-             WHERE archived = 0 AND LOWER(path) LIKE LOWER(?2)
-             ORDER BY match_priority ASC, {} DESC, path ASC
-             {}",
-            ranking_column, limit_clause
+             WHERE archived = 0",
+            ranking_column
         );
 
         let mut stmt = self.db.prepare(&sql)?;
 
-        // ?1 = prefix pattern (query%), ?2 = substring pattern (%query%)
-        let prefix_pattern = format!("{}%", query.replace('%', "\\%").replace('_', "\\_"));
-
-        let results = stmt
-            .query_map(params![prefix_pattern, pattern], |row| {
+        let candidates: Vec<(NoteMetadata, f64)> = stmt
+            .query_map([], |row| {
                 let mtime: i64 = row.get(2)?;
                 let modified = UNIX_EPOCH + std::time::Duration::from_secs(mtime as u64);
-                Ok(NoteMetadata {
-                    id: row.get(0)?,
-                    path: row.get(1)?,
-                    modified,
-                    archived: row.get::<_, i64>(3)? != 0,
-                })
+                let ranking_score: f64 = row.get(4)?;
+                Ok((
+                    NoteMetadata {
+                        id: row.get(0)?,
+                        path: row.get(1)?,
+                        modified,
+                        archived: row.get::<_, i64>(3)? != 0,
+                    },
+                    ranking_score,
+                ))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        // Score and filter matches
+        let query_lower = query.to_lowercase();
+        let mut scored_results: Vec<(NoteMetadata, i32, f64)> = candidates
+            .into_iter()
+            .filter_map(|(note, ranking_score)| {
+                fuzzy_match_score(&note.path, &query_lower)
+                    .map(|score| (note, score, ranking_score))
+            })
+            .collect();
+
+        // Sort by: 1) match score (lower is better), 2) ranking score (higher is better), 3) path
+        scored_results.sort_by(|a, b| {
+            a.1.cmp(&b.1)
+                .then_with(|| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| a.0.path.cmp(&b.0.path))
+        });
+
+        // Apply limit and extract notes
+        let results = scored_results
+            .into_iter()
+            .take(limit.unwrap_or(usize::MAX))
+            .map(|(note, _, _)| note)
+            .collect();
 
         Ok(results)
     }
@@ -2043,5 +2155,73 @@ mod tests {
         // Prefix matches (test, testing) should come before path segment matches
         assert!(test_pos < project_test_pos);
         assert!(testing_pos < project_test_pos);
+    }
+
+    #[test]
+    fn test_fuzzy_search_path_separators_and_gaps() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut api = NotesApi::new(temp_dir.path()).unwrap();
+
+        // Create test notes for specific user scenarios
+        api.create_note("journal").unwrap();
+        api.create_note("journal/daily").unwrap();
+        api.create_note("journal/weekly").unwrap();
+        api.create_note("journal/hello").unwrap();
+        api.create_note("daily").unwrap();
+        api.create_note("daily/journal").unwrap();
+
+        // Test case 1: "jou" should prioritize "journal" over "journal/..." subnotes
+        let results = api.fuzzy_search("jou", None, RankingMode::Visits).unwrap();
+        assert!(!results.is_empty(), "Should find matches for 'jou'");
+
+        // "journal" should rank first (prefix match in note name)
+        assert_eq!(
+            results[0].path, "journal",
+            "Expected 'journal' to rank first for query 'jou', but got '{}'",
+            results[0].path
+        );
+
+        // Test case 2: "journ/" should match journal's children
+        let results = api
+            .fuzzy_search("journ/", None, RankingMode::Visits)
+            .unwrap();
+        assert!(!results.is_empty(), "Should find matches for 'journ/'");
+
+        // Should include journal's children
+        let paths: Vec<_> = results.iter().map(|n| n.path.as_str()).collect();
+        assert!(
+            paths.contains(&"journal/daily"),
+            "Should match 'journal/daily'"
+        );
+        assert!(
+            paths.contains(&"journal/weekly"),
+            "Should match 'journal/weekly'"
+        );
+
+        // Test case 3: "journhel" should match "journal/hello" (fuzzy match across separator)
+        let results = api
+            .fuzzy_search("journhel", None, RankingMode::Visits)
+            .unwrap();
+        assert!(!results.is_empty(), "Should find matches for 'journhel'");
+        assert!(
+            results.iter().any(|n| n.path == "journal/hello"),
+            "Expected 'journal/hello' to match query 'journhel'"
+        );
+
+        // Test case 4: Verify note name matches beat parent path matches
+        let results = api
+            .fuzzy_search("journ", None, RankingMode::Visits)
+            .unwrap();
+        let journal_pos = results.iter().position(|n| n.path == "journal").unwrap();
+        let daily_journal_pos = results
+            .iter()
+            .position(|n| n.path == "daily/journal")
+            .unwrap();
+
+        // "journal" (prefix match in note name) should rank before "daily/journal" (match in parent)
+        assert!(
+            journal_pos < daily_journal_pos,
+            "'journal' should rank before 'daily/journal' for query 'journ'"
+        );
     }
 }

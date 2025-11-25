@@ -133,12 +133,7 @@ export function NoteFinder(props: {
         class="max-h-[400px] overflow-y-auto px-2.5 py-1 pr-1"
         onMouseLeave={() => setSelectedIndex(0)}
       >
-        {isLoading() && (
-          <div class="px-2 py-1.5 opacity-60">
-            {query().trim() ? "Searching..." : "Loading notes..."}
-          </div>
-        )}
-        {!isLoading() && results().length === 0 && (
+        {results().length === 0 && (
           <div class="px-2 py-1.5 opacity-60">
             {query().trim() ? "No results found" : "No notes available"}
           </div>
