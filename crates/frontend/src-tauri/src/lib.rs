@@ -303,6 +303,35 @@ fn resolve_image_path(
         .ok_or_else(|| "Invalid path".to_string())
 }
 
+fn run_br_tags_migration(app: &tauri::App, notes_api: &Arc<Mutex<NotesApi>>) {
+    let store = app
+        .store("app-state.json")
+        .expect("Failed to load app-state store");
+    let migration_completed = store
+        .get("brTagsMigrationCompleted")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if !migration_completed {
+        eprintln!("Running br tag cleanup migration...");
+        let notes_root = {
+            let api = notes_api.lock().unwrap();
+            api.notes_root().to_path_buf()
+        };
+
+        if let Err(e) = cleanup_br_tags(&notes_root) {
+            eprintln!("Warning: Failed to run br tag cleanup migration: {:?}", e);
+        } else {
+            // Mark migration as completed
+            store.set("brTagsMigrationCompleted", serde_json::json!(true));
+            if let Err(e) = store.save() {
+                eprintln!("Warning: Failed to save store: {:?}", e);
+            }
+            eprintln!("br tag cleanup migration completed successfully");
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut api =
@@ -347,33 +376,8 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let app_handle_frecency = app.handle().clone();
 
-            // Check if br tags migration has been completed
-            let store = app
-                .store("app-state.json")
-                .expect("Failed to load app-state store");
-            let migration_completed = store
-                .get("brTagsMigrationCompleted")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-
-            if !migration_completed {
-                eprintln!("Running br tag cleanup migration...");
-                let notes_root = {
-                    let api = notes_api.lock().unwrap();
-                    api.notes_root().to_path_buf()
-                };
-
-                if let Err(e) = cleanup_br_tags(&notes_root) {
-                    eprintln!("Warning: Failed to run br tag cleanup migration: {:?}", e);
-                } else {
-                    // Mark migration as completed
-                    store.set("brTagsMigrationCompleted", serde_json::json!(true));
-                    if let Err(e) = store.save() {
-                        eprintln!("Warning: Failed to save store: {:?}", e);
-                    }
-                    eprintln!("br tag cleanup migration completed successfully");
-                }
-            }
+            // Run migrations
+            // run_br_tags_migration(app, &notes_api);
 
             // Set up frecency callback
             {
