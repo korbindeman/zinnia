@@ -70,7 +70,7 @@ function AppContent() {
 
       // Check if app was just updated
       if (lastVersion && lastVersion !== currentVersion) {
-        const releaseUrl = `https://github.com/korbindeman/zinnia/releases/tag/v${currentVersion}`;
+        const releaseUrl = `https://github.com/korbindeman/zinnia/releases`;
 
         const openReleaseNotes = async () => {
           const opener = await import("@tauri-apps/plugin-opener");
