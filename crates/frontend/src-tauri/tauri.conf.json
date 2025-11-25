@@ -16,7 +16,16 @@
         "height": 600,
         "titleBarStyle": "Overlay"
       }
-    ]
+    ],
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$HOME/Documents/**",
+          "$HOME/Library/Mobile Documents/com~apple~CloudDocs/**"
+        ]
+      }
+    }
   },
   "bundle": {
     "active": true,

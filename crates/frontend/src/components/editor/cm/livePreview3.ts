@@ -12,7 +12,8 @@ import {
   ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
-import { EditorState, Range } from "@codemirror/state";
+import { EditorState, Range, StateField, StateEffect } from "@codemirror/state";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 /**
  * Get all line numbers that have a selection in them
@@ -34,9 +35,29 @@ function getSelectedLines(state: EditorState): Set<number> {
 }
 
 /**
+ * StateEffect to set the note path
+ */
+export const setNotePathEffect = StateEffect.define<string>();
+
+/**
+ * StateField to store the note path
+ */
+export const notePathField = StateField.define<string>({
+  create: () => "",
+  update: (value, tr) => {
+    for (let effect of tr.effects) {
+      if (effect.is(setNotePathEffect)) {
+        return effect.value;
+      }
+    }
+    return value;
+  },
+});
+
+/**
  * Create decorations to hide markdown syntax
  */
-function createDecorations(view: EditorView): DecorationSet {
+function createDecorations(view: EditorView, notePath: string): DecorationSet {
   const decorations: Range<Decoration>[] = [];
 
   // If editor doesn't have focus, render all lines in preview mode
@@ -195,6 +216,81 @@ function createDecorations(view: EditorView): DecorationSet {
         ),
       );
     }
+
+    // Images: handle ![alt](url) syntax - only if it's the entire line
+    // Images always render as block-level widgets on their own line
+    const trimmedLine = lineText.trim();
+    const imageRegex = /^!\[([^\]]*)\]\(([^)]+)\)$/;
+    const imageMatch = trimmedLine.match(imageRegex);
+
+    if (imageMatch) {
+      const alt = imageMatch[1];
+      const url = imageMatch[2];
+
+      // Hide the entire line
+      decorations.push(
+        Decoration.line({ class: "cm-image-line" }).range(line.from),
+      );
+
+      decorations.push(
+        Decoration.mark({ class: "cm-hide-syntax" }).range(line.from, line.to),
+      );
+
+      // Add block-level image widget at the start of the line
+      const imageWidget = Decoration.widget({
+        widget: new (class extends WidgetType {
+          toDOM() {
+            const container = document.createElement("div");
+            container.className = "cm-image-block";
+
+            const img = document.createElement("img");
+
+            // Convert local paths to Tauri asset protocol
+            // Local paths start with ./ or _attachments/
+            if (url.startsWith("./") || url.startsWith("_attachments/")) {
+              // Resolve the path asynchronously
+              (async () => {
+                try {
+                  // Import commands dynamically to avoid circular dependencies
+                  const { commands } = await import("../../../api/commands");
+                  const fullPath = await commands.resolveImagePath(
+                    notePath,
+                    url,
+                  );
+                  // Convert the file path to Tauri asset URL with 'asset' protocol
+                  const assetUrl = convertFileSrc(fullPath, "asset");
+                  img.src = assetUrl;
+                } catch (error) {
+                  console.error(`Failed to resolve image path: ${url}`, error);
+                  img.alt = `[Image not found: ${alt || url}]`;
+                  container.classList.add("cm-image-error");
+                }
+              })();
+            } else {
+              // Remote URLs use as-is (though they shouldn't exist after paste handling)
+              img.src = url;
+            }
+
+            img.alt = alt;
+            img.className = "cm-image-content";
+
+            // Handle image load errors
+            img.onerror = () => {
+              console.error(`Failed to load image: ${url}`);
+              img.alt = `[Image failed to load: ${alt || url}]`;
+              container.classList.add("cm-image-error");
+            };
+
+            container.appendChild(img);
+            return container;
+          }
+        })(),
+        block: true,
+        side: -1,
+      });
+
+      decorations.push(imageWidget.range(line.from));
+    }
   }
 
   return Decoration.set(decorations, true);
@@ -208,13 +304,22 @@ const livePreviewPlugin = ViewPlugin.fromClass(
     decorations: DecorationSet;
 
     constructor(private view: EditorView) {
-      this.decorations = createDecorations(view);
+      const notePath = view.state.field(notePathField);
+      this.decorations = createDecorations(view, notePath);
     }
 
     update(update: ViewUpdate) {
-      // Update decorations on doc change, selection change, or focus change
-      if (update.docChanged || update.selectionSet || update.focusChanged) {
-        this.decorations = createDecorations(this.view);
+      // Update decorations on doc change, selection change, focus change, or note path change
+      const notePath = update.state.field(notePathField);
+      if (
+        update.docChanged ||
+        update.selectionSet ||
+        update.focusChanged ||
+        update.transactions.some((tr) =>
+          tr.effects.some((e) => e.is(setNotePathEffect)),
+        )
+      ) {
+        this.decorations = createDecorations(this.view, notePath);
       }
     }
   },
@@ -227,5 +332,5 @@ const livePreviewPlugin = ViewPlugin.fromClass(
  * Extension for syntax-hiding live preview
  */
 export function livePreview() {
-  return [livePreviewPlugin];
+  return [notePathField, livePreviewPlugin];
 }

@@ -134,6 +134,14 @@ where
                                 if let Some(note_path) = path_to_note_path(path)
                                     && let Ok(mut api) = notes_api.lock()
                                 {
+                                    // Skip if an operation is in progress (API is making changes)
+                                    if api
+                                        .operation_flag()
+                                        .load(std::sync::atomic::Ordering::SeqCst)
+                                    {
+                                        continue;
+                                    }
+
                                     // Use sync_note which returns true only if content changed
                                     match api.sync_note(&note_path) {
                                         Ok(true) => {

@@ -190,6 +190,119 @@ fn trash_note(path: String, state: State<AppState>) -> Result<(), String> {
     api.trash_note(&path).map_err(|e| format!("{:?}", e))
 }
 
+#[tauri::command]
+async fn download_image(
+    note_path: String,
+    image_url: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    use std::path::PathBuf;
+
+    // Get the notes root directory
+    let notes_root = {
+        let api = state.notes_api.lock().unwrap();
+        api.notes_root().to_path_buf()
+    };
+
+    // Create attachments directory for this note
+    let note_dir = if note_path.is_empty() {
+        notes_root.clone()
+    } else {
+        notes_root.join(&note_path)
+    };
+    let attachments_dir = note_dir.join("_attachments");
+    std::fs::create_dir_all(&attachments_dir)
+        .map_err(|e| format!("Failed to create attachments directory: {:?}", e))?;
+
+    // Download the image
+    let response = reqwest::get(&image_url)
+        .await
+        .map_err(|e| format!("Failed to download image: {:?}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Failed to download image: HTTP {}",
+            response.status()
+        ));
+    }
+
+    // Get the file extension from URL or content type
+    let extension = image_url
+        .split('/')
+        .last()
+        .and_then(|s| s.split('?').next())
+        .and_then(|s| s.split('.').last())
+        .filter(|ext| ["png", "jpg", "jpeg", "gif", "webp", "svg"].contains(ext))
+        .or_else(|| {
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|ct| ct.to_str().ok())
+                .and_then(|ct| match ct {
+                    "image/png" => Some("png"),
+                    "image/jpeg" => Some("jpg"),
+                    "image/gif" => Some("gif"),
+                    "image/webp" => Some("webp"),
+                    "image/svg+xml" => Some("svg"),
+                    _ => None,
+                })
+        })
+        .unwrap_or("png");
+
+    // Generate a unique filename based on timestamp
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let filename = format!("image-{}.{}", timestamp, extension);
+    let file_path = attachments_dir.join(&filename);
+
+    // Save the image
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read image data: {:?}", e))?;
+    std::fs::write(&file_path, bytes).map_err(|e| format!("Failed to save image: {:?}", e))?;
+
+    // Return relative path from note (for markdown)
+    Ok(format!("_attachments/{}", filename))
+}
+
+#[tauri::command]
+fn resolve_image_path(
+    note_path: String,
+    image_path: String,
+    state: State<AppState>,
+) -> Result<String, String> {
+    // Get the notes root directory
+    let notes_root = {
+        let api = state.notes_api.lock().unwrap();
+        api.notes_root().to_path_buf()
+    };
+
+    // Build the full path to the image
+    let note_dir = if note_path.is_empty() {
+        notes_root.clone()
+    } else {
+        notes_root.join(&note_path)
+    };
+
+    let full_path = if image_path.starts_with("./") {
+        note_dir.join(&image_path[2..])
+    } else if image_path.starts_with("_attachments/") {
+        note_dir.join(&image_path)
+    } else {
+        // Assume it's a relative path
+        note_dir.join(&image_path)
+    };
+
+    // Return the absolute path as a string
+    full_path
+        .to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Invalid path".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut api =
@@ -227,6 +340,8 @@ pub fn run() {
             archive_note,
             unarchive_note,
             trash_note,
+            download_image,
+            resolve_image_path,
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();

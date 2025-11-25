@@ -48,4 +48,10 @@ export const commands = {
   unarchiveNote: (path: string) => invoke<void>("unarchive_note", { path }),
 
   trashNote: (path: string) => invoke<void>("trash_note", { path }),
+
+  downloadImage: (notePath: string, imageUrl: string) =>
+    invoke<string>("download_image", { notePath, imageUrl }),
+
+  resolveImagePath: (notePath: string, imagePath: string) =>
+    invoke<string>("resolve_image_path", { notePath, imagePath }),
 };

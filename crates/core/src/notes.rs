@@ -175,6 +175,11 @@ impl NotesApi {
     pub fn create_note(&mut self, path: &str) -> Result<Note> {
         let _guard = OperationGuard::new(Arc::clone(&self.operation_in_progress));
 
+        // Check if note already exists
+        if self.note_exists(path)? {
+            return Err(Error::AlreadyExists(path.to_string()));
+        }
+
         // Check if parent exists (if not root-level)
         if let Some(parent_path) = get_parent_path(path)
             && !self.note_exists(&parent_path)?

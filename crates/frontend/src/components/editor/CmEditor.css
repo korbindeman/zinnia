@@ -310,27 +310,61 @@
   border-bottom: 1px solid var(--color-border);
 }
 
-/* Widget images */
-.cm-markdown-widget img,
-.cm-markdown-block-widget img,
-.cm-markdown-rendered img {
+/* Block-level image container */
+.cm-image-block {
+  display: block;
+  margin: 0.5em 0;
+  padding: 4px;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  transition: border-color 0.15s ease;
+  width: fit-content;
+  max-width: 100%;
+}
+
+/* Image content */
+.cm-image-content {
+  display: block;
+  max-width: 100%;
   max-height: 300px;
+  height: auto;
   width: auto;
+  object-fit: contain;
+  border-radius: 2px;
 }
 
-.cm-markdown-widget p:has(> img:not(:only-child)),
-.cm-markdown-block-widget p:has(> img:not(:only-child)),
-.cm-markdown-rendered p:has(> img:not(:only-child)) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: flex-start;
+/* Image line - hide the markdown text */
+.cm-image-line {
+  height: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden;
 }
 
-.cm-markdown-widget p:has(> img:not(:only-child)) img,
-.cm-markdown-block-widget p:has(> img:not(:only-child)) img,
-.cm-markdown-rendered p:has(> img:not(:only-child)) img {
-  flex: 0 1 auto;
+/* Hover state for image block */
+.cm-image-block:hover {
+  border-color: rgba(0, 122, 255, 0.3);
+  cursor: pointer;
+}
+
+/* Selected state - when cursor is on the image line */
+.cm-activeLine .cm-image-block {
+  border-color: rgba(0, 122, 255, 0.5);
+  box-shadow: 0 0 0 1px rgba(0, 122, 255, 0.2);
+}
+
+/* Error state for failed image loads */
+.cm-image-error {
+  border-color: rgba(255, 0, 0, 0.3);
+  background-color: rgba(255, 0, 0, 0.05);
+}
+
+.cm-image-error .cm-image-content {
+  opacity: 0.5;
+}
+
+/* Hide widget buffer elements */
+.cm-widgetBuffer {
+  display: none !important;
 }
 
 /* Widget blockquote */
