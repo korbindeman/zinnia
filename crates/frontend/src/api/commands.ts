@@ -33,11 +33,13 @@ export const commands = {
     query: string,
     limit?: number,
     rankingMode?: RankingMode,
+    contextPath?: string | null,
   ) =>
     invoke<NoteMetadata[]>("fuzzy_search_notes", {
       query,
       limit,
       rankingMode: rankingMode || "visits",
+      contextPath: contextPath ?? null,
     }),
 
   searchNotes: (query: string) =>

@@ -10,6 +10,7 @@ export function NoteFinder(props: {
   placeholder?: string;
   excludePath?: string | null;
   rankBy?: RankingMode;
+  contextPath?: string | null;
 }) {
   const [query, setQuery] = createSignal("");
   const [results, setResults] = createSignal<NoteMetadata[]>([]);
@@ -37,6 +38,7 @@ export function NoteFinder(props: {
 
     const searchQuery = query();
     const rankingMode = props.rankBy || "visits";
+    const contextPath = props.contextPath;
 
     setIsLoading(true);
     try {
@@ -44,6 +46,7 @@ export function NoteFinder(props: {
         searchQuery,
         6,
         rankingMode,
+        contextPath,
       );
       const filtered = props.excludePath
         ? searchResults.filter((note) => note.path !== props.excludePath)

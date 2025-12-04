@@ -775,6 +775,7 @@ impl NotesApi {
     /// - Path separators (/) can match query characters or be skipped
     /// - Prioritizes matches in note name over parent path
     /// - Uses ranking score (frecency/visits) as tiebreaker for similar match quality
+    /// - When context_path is provided, children of that path get a significant boost
     ///
     /// Returns non-archived notes sorted by match quality, then by ranking score.
     /// Designed for interactive note pickers where users type partial titles.
@@ -783,6 +784,7 @@ impl NotesApi {
         query: &str,
         limit: Option<usize>,
         ranking_mode: RankingMode,
+        context_path: Option<&str>,
     ) -> Result<Vec<NoteMetadata>> {
         let ranking_column = match ranking_mode {
             RankingMode::Visits => "direct_access_count",
@@ -847,18 +849,31 @@ impl NotesApi {
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         // Score and filter matches
+        // Tuple: (note, match_score, ranking_score, is_child_of_context)
         let query_lower = query.to_lowercase();
-        let mut scored_results: Vec<(NoteMetadata, i32, f64)> = candidates
+        let mut scored_results: Vec<(NoteMetadata, i32, f64, bool)> = candidates
             .into_iter()
             .filter_map(|(note, ranking_score)| {
-                fuzzy_match_score(&note.path, &query_lower)
-                    .map(|score| (note, score, ranking_score))
+                fuzzy_match_score(&note.path, &query_lower).map(|score| {
+                    // Check if this note is a child of the context path
+                    let is_child = context_path.map_or(false, |ctx| {
+                        if ctx.is_empty() {
+                            // Context is root - all notes are children
+                            true
+                        } else {
+                            note.path.starts_with(&format!("{}/", ctx))
+                        }
+                    });
+                    (note, score, ranking_score, is_child)
+                })
             })
             .collect();
 
-        // Sort by: 1) match score (lower is better), 2) ranking score (higher is better), 3) path
+        // Sort by: 1) children first, 2) match score (lower is better), 3) ranking score (higher is better), 4) path
         scored_results.sort_by(|a, b| {
-            a.1.cmp(&b.1)
+            // Children of context path come first
+            b.3.cmp(&a.3)
+                .then_with(|| a.1.cmp(&b.1))
                 .then_with(|| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal))
                 .then_with(|| a.0.path.cmp(&b.0.path))
         });
@@ -867,7 +882,7 @@ impl NotesApi {
         let results = scored_results
             .into_iter()
             .take(limit.unwrap_or(usize::MAX))
-            .map(|(note, _, _)| note)
+            .map(|(note, _, _, _)| note)
             .collect();
 
         Ok(results)
@@ -2052,39 +2067,39 @@ mod tests {
         api.create_note("other/stuff").unwrap();
 
         // Test prefix matching - "hel" should match hello, hello-world, help
-        let results = api.fuzzy_search("hel", None, RankingMode::Visits).unwrap();
+        let results = api.fuzzy_search("hel", None, RankingMode::Visits, None).unwrap();
         assert_eq!(results.len(), 4); // hello, hello-world, help, project/hello
 
         // Verify prefix matches come first
         assert!(results[0].path.starts_with("hel") || results[0].path == "help");
 
         // Test single character
-        let results = api.fuzzy_search("h", None, RankingMode::Visits).unwrap();
+        let results = api.fuzzy_search("h", None, RankingMode::Visits, None).unwrap();
         assert!(results.len() >= 4); // At least the hello variants and help
 
         // Test exact match
         let results = api
-            .fuzzy_search("hello", None, RankingMode::Visits)
+            .fuzzy_search("hello", None, RankingMode::Visits, None)
             .unwrap();
         assert!(results.iter().any(|n| n.path == "hello"));
         assert!(results.iter().any(|n| n.path == "hello-world"));
 
         // Test case insensitivity
         let results = api
-            .fuzzy_search("HELLO", None, RankingMode::Visits)
+            .fuzzy_search("HELLO", None, RankingMode::Visits, None)
             .unwrap();
         assert!(results.iter().any(|n| n.path == "hello"));
 
         // Test substring matching
-        let results = api.fuzzy_search("ell", None, RankingMode::Visits).unwrap();
+        let results = api.fuzzy_search("ell", None, RankingMode::Visits, None).unwrap();
         assert!(results.iter().any(|n| n.path == "hello"));
 
         // Test no matches
-        let results = api.fuzzy_search("xyz", None, RankingMode::Visits).unwrap();
+        let results = api.fuzzy_search("xyz", None, RankingMode::Visits, None).unwrap();
         assert_eq!(results.len(), 0);
 
         // Test empty query returns all notes
-        let results = api.fuzzy_search("", None, RankingMode::Visits).unwrap();
+        let results = api.fuzzy_search("", None, RankingMode::Visits, None).unwrap();
         assert_eq!(results.len(), 7); // All notes including parent folders
     }
 
@@ -2102,7 +2117,7 @@ mod tests {
         api.create_note("other/testing-notes").unwrap();
 
         // Prefix matches should rank higher than substring matches
-        let results = api.fuzzy_search("test", None, RankingMode::Visits).unwrap();
+        let results = api.fuzzy_search("test", None, RankingMode::Visits, None).unwrap();
 
         // "test" and "testing" should come before "project/test"
         // (prefix match on path vs prefix match on segment)
@@ -2130,7 +2145,7 @@ mod tests {
         api.create_note("daily/journal").unwrap();
 
         // Test case 1: "jou" should prioritize "journal" over "journal/..." subnotes
-        let results = api.fuzzy_search("jou", None, RankingMode::Visits).unwrap();
+        let results = api.fuzzy_search("jou", None, RankingMode::Visits, None).unwrap();
         assert!(!results.is_empty(), "Should find matches for 'jou'");
 
         // "journal" should rank first (prefix match in note name)
@@ -2142,7 +2157,7 @@ mod tests {
 
         // Test case 2: "journ/" should match journal's children
         let results = api
-            .fuzzy_search("journ/", None, RankingMode::Visits)
+            .fuzzy_search("journ/", None, RankingMode::Visits, None)
             .unwrap();
         assert!(!results.is_empty(), "Should find matches for 'journ/'");
 
@@ -2159,7 +2174,7 @@ mod tests {
 
         // Test case 3: "journhel" should match "journal/hello" (fuzzy match across separator)
         let results = api
-            .fuzzy_search("journhel", None, RankingMode::Visits)
+            .fuzzy_search("journhel", None, RankingMode::Visits, None)
             .unwrap();
         assert!(!results.is_empty(), "Should find matches for 'journhel'");
         assert!(
@@ -2169,7 +2184,7 @@ mod tests {
 
         // Test case 4: Verify note name matches beat parent path matches
         let results = api
-            .fuzzy_search("journ", None, RankingMode::Visits)
+            .fuzzy_search("journ", None, RankingMode::Visits, None)
             .unwrap();
         let journal_pos = results.iter().position(|n| n.path == "journal").unwrap();
         let daily_journal_pos = results

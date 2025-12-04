@@ -4,7 +4,7 @@ import { createSignal, createEffect, onCleanup, onMount, Show } from "solid-js";
 import { history } from "@milkdown/kit/plugin/history";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { gfm } from "@milkdown/kit/preset/gfm";
-import { $prose, $nodeAttr } from "@milkdown/kit/utils";
+import { $prose } from "@milkdown/kit/utils";
 import { Plugin, PluginKey } from "@milkdown/kit/prose/state";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import "prosemirror-view/style/prosemirror.css";
@@ -26,9 +26,7 @@ const createImagePathResolverPlugin = (notePath: string) => {
       key: pluginKey,
       props: {
         decorations(state) {
-          const decorations: any[] = [];
-
-          state.doc.descendants((node, pos) => {
+          state.doc.descendants((node, _pos) => {
             if (node.type.name === "image") {
               const src = node.attrs.src;
 
@@ -203,7 +201,7 @@ const createImagePastePlugin = (notePath: string) => {
                   const { schema } = view.state;
                   let { from } = view.state.selection;
 
-                  results.forEach((result, index) => {
+                  results.forEach((result) => {
                     if (result) {
                       const imageNode = schema.nodes.image?.create({
                         src: result.localPath,
@@ -278,6 +276,72 @@ const createImagePastePlugin = (notePath: string) => {
   });
 };
 
+/**
+ * Create a plugin to handle checkbox clicks
+ */
+const createCheckboxClickPlugin = () => {
+  const pluginKey = new PluginKey("checkboxClick");
+
+  return $prose(() => {
+    return new Plugin({
+      key: pluginKey,
+      props: {
+        handleDOMEvents: {
+          mousedown: (view, event) => {
+            // Only handle left clicks
+            if (event.button !== 0) return false;
+
+            const target = event.target as HTMLElement;
+            const listItem = target.closest("li[data-checked]");
+            if (!listItem) return false;
+
+            const rect = listItem.getBoundingClientRect();
+            const clickX = event.clientX - rect.left;
+
+            // Only handle clicks in the checkbox area (left 32px)
+            if (clickX > 32) return false;
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            // Find the list_item node position
+            let pos = view.posAtDOM(listItem, 0);
+            let node = view.state.doc.nodeAt(pos);
+
+            // If we got a paragraph, move up to find the list_item
+            if (node?.type.name === "paragraph") {
+              const $pos = view.state.doc.resolve(pos);
+              // Go up one level to the parent
+              if ($pos.depth > 0) {
+                pos = $pos.before($pos.depth);
+                node = view.state.doc.nodeAt(pos);
+              }
+            }
+
+            if (
+              node &&
+              (node.type.name === "task_list_item" ||
+                node.type.name === "list_item")
+            ) {
+              const { tr } = view.state;
+              const currentChecked =
+                listItem.getAttribute("data-checked") === "true";
+              tr.setNodeMarkup(pos, undefined, {
+                ...node.attrs,
+                checked: !currentChecked,
+              });
+              view.dispatch(tr);
+              return true;
+            }
+
+            return false;
+          },
+        },
+      },
+    });
+  });
+};
+
 function MdEditor({ path, content }: { path: string; content: NoteContent }) {
   const [pathSignal, _] = createSignal(path);
 
@@ -312,6 +376,7 @@ function MdEditor({ path, content }: { path: string; content: NoteContent }) {
       .use(listener)
       .use(createImagePathResolverPlugin(path))
       .use(createImagePastePlugin(path))
+      .use(createCheckboxClickPlugin())
       .create();
   });
 

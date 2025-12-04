@@ -141,6 +141,7 @@ function AppContent() {
         onClose={() => setShowNoteFinder(false)}
         placeholder="Search notes..."
         rankBy="frecency"
+        contextPath={notes.currentPath()}
       />
       <Settings open={showSettings()} onClose={() => setShowSettings(false)} />
     </div>

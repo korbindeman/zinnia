@@ -156,10 +156,11 @@ fn fuzzy_search_notes(
     query: String,
     limit: Option<usize>,
     ranking_mode: RankingModeDTO,
+    context_path: Option<String>,
     state: State<AppState>,
 ) -> Result<Vec<NoteMetadataDTO>, String> {
     let api = state.notes_api.lock().unwrap();
-    api.fuzzy_search(&query, limit, ranking_mode.into())
+    api.fuzzy_search(&query, limit, ranking_mode.into(), context_path.as_deref())
         .map(|results| results.into_iter().map(|r| r.into()).collect())
         .map_err(|e| format!("{:?}", e))
 }
@@ -196,8 +197,6 @@ async fn download_image(
     image_url: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    use std::path::PathBuf;
-
     // Get the notes root directory
     let notes_root = {
         let api = state.notes_api.lock().unwrap();

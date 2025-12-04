@@ -198,24 +198,6 @@ export function Navigation() {
             }}
           </For>
         </div>
-        <div class="ml-4 flex gap-1">
-          <button
-            class="hover:bg-button-hover rounded px-2 opacity-60 disabled:cursor-not-allowed disabled:opacity-30"
-            onClick={() => notes.goBack()}
-            disabled={!notes.canGoBack()}
-            title="Go back"
-          >
-            ←
-          </button>
-          <button
-            class="hover:bg-button-hover rounded px-2 opacity-60 disabled:cursor-not-allowed disabled:opacity-30"
-            onClick={() => notes.goForward()}
-            disabled={!notes.canGoForward()}
-            title="Go forward"
-          >
-            →
-          </button>
-        </div>
       </nav>
     </div>
   );
