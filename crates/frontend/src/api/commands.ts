@@ -56,4 +56,7 @@ export const commands = {
 
   resolveImagePath: (notePath: string, imagePath: string) =>
     invoke<string>("resolve_image_path", { notePath, imagePath }),
+
+  getNoteFilePath: (path: string) =>
+    invoke<string>("get_note_file_path", { path }),
 };

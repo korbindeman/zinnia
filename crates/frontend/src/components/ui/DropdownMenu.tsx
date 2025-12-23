@@ -1,14 +1,17 @@
 import { createSignal, For, onMount, onCleanup, Show } from "solid-js";
 import { listen } from "@tauri-apps/api/event";
+import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
 import { useNotes } from "../../api";
 import { commands } from "../../api/commands";
 import { InputModal } from "./InputModal";
+import { ConfirmModal } from "./ConfirmModal";
 import { NoteFinder } from "./NoteFinder";
 import { MenuPanel } from "./MenuPanel";
 import { useToast } from "./Toast";
 import type { NoteMetadata } from "../../types";
 import type { MenuItem } from "./ContextMenu";
 import { ContextMenuContainer } from "./ContextMenu";
+import { getPathTitle } from "../../utils/paths";
 
 interface PanelState {
   parentPath: string;
@@ -47,6 +50,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
     y: number;
     notePath: string;
   } | null>(null);
+  const [noteToTrash, setNoteToTrash] = createSignal<NoteMetadata | null>(null);
 
   // Listen for frecency updates and clear cache
   onMount(() => {
@@ -295,7 +299,10 @@ export function DropdownMenu(props: DropdownMenuProps) {
     }
   };
 
-  const handleTrashItem = async (item: NoteMetadata) => {
+  const confirmTrashItem = async () => {
+    const item = noteToTrash();
+    if (!item) return;
+
     const itemPath = item.path;
     const wasCurrentNote = notes.currentPath() === itemPath;
     const parentPath = itemPath.split("/").slice(0, -1).join("/");
@@ -350,12 +357,45 @@ export function DropdownMenu(props: DropdownMenuProps) {
     });
   };
 
+  const handleRevealInFinder = async (notePath: string) => {
+    try {
+      const filePath = await commands.getNoteFilePath(notePath);
+      await revealItemInDir(filePath);
+    } catch (err) {
+      console.error("Failed to reveal in finder:", err);
+      toast.error(`Failed to reveal in finder: ${err}`);
+    }
+  };
+
+  const handleOpenInDefaultApp = async (notePath: string) => {
+    try {
+      const filePath = await commands.getNoteFilePath(notePath);
+      await openPath(filePath);
+    } catch (err) {
+      console.error("Failed to open in default app:", err);
+      toast.error(`Failed to open in default app: ${err}`);
+    }
+  };
+
   const createContextMenuItems = (note: NoteMetadata): MenuItem[] => {
     return [
       {
         label: "Move",
         onClick: () => {
           handleMoveNote(note.path);
+        },
+      },
+      { separator: true },
+      {
+        label: "Reveal in Finder",
+        onClick: () => {
+          handleRevealInFinder(note.path);
+        },
+      },
+      {
+        label: "Open in Default App",
+        onClick: () => {
+          handleOpenInDefaultApp(note.path);
         },
       },
       { separator: true },
@@ -368,7 +408,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
       {
         label: "Trash",
         onClick: () => {
-          handleTrashItem(note);
+          setNoteToTrash(note);
         },
       },
     ];
@@ -459,6 +499,14 @@ export function DropdownMenu(props: DropdownMenuProps) {
         onSubmit={createNewNote}
         placeholder="untitled"
         onClose={() => setShowModal(false)}
+      />
+      <ConfirmModal
+        open={noteToTrash() !== null}
+        title="Move to Trash"
+        message={`Are you sure you want to move "${getPathTitle(noteToTrash()?.path || "")}" to trash?`}
+        confirmLabel="Trash"
+        onConfirm={confirmTrashItem}
+        onClose={() => setNoteToTrash(null)}
       />
       <NoteFinder
         open={showNoteFinder()}

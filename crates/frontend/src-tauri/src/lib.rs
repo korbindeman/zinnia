@@ -268,6 +268,22 @@ async fn download_image(
 }
 
 #[tauri::command]
+fn get_note_file_path(path: String, state: State<AppState>) -> Result<String, String> {
+    let api = state.notes_api.lock().unwrap();
+    let notes_root = api.notes_root();
+    let note_dir = if path.is_empty() {
+        notes_root.to_path_buf()
+    } else {
+        notes_root.join(&path)
+    };
+    let file_path = note_dir.join("_index.md");
+    file_path
+        .to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Invalid path".to_string())
+}
+
+#[tauri::command]
 fn resolve_image_path(
     note_path: String,
     image_path: String,
@@ -370,6 +386,7 @@ pub fn run() {
             trash_note,
             download_image,
             resolve_image_path,
+            get_note_file_path,
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
